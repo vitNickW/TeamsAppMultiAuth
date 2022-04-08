@@ -1,5 +1,5 @@
 # Overview
-This is a barebones project which contains the minimimal amount of code for authenticating a Teams App built-in C# .NET Framework. Within this code contains a Microsoft's Silent Authentication using ADAL (which Microsoft will be depricate in mid 2022).
+This is a barebones project which contains the minimal amount of code for authenticating a Teams App built-in C# .NET Framework. Within this code contains a Microsoft's Silent Authentication using ADAL (which Microsoft will be depricate in mid 2022).
 
 # Purpose
 The purpose of this project is for troubleshooting an issue where an individual logs into the app under different logins. (e.g., Their standard account, an account for demo purposes, an admin account, etc.). When switching accounts, the user will encounter a blank white screen immediately after Authentication.
