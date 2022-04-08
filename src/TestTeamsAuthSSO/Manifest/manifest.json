@@ -1,0 +1,45 @@
+{
+  "$schema": "https://developer.microsoft.com/en-us/json-schemas/teams/v1.7/MicrosoftTeams.schema.json",
+  "manifestVersion": "1.7",
+  "version": "1.0.0",
+  "id": "«Replace with a new Guid - NOT the app/client id»",
+  "packageName": "com.Vitalyst.teams.demo.TestTeamsAuthSSO",
+  "developer": {
+    "name": "Microsoft",
+    "websiteUrl": "https://example.azurewebsites.net",
+    "privacyUrl": "https://example.azurewebsites.net/privacy",
+    "termsOfUseUrl": "https://example.azurewebsites.net/termsofuse"
+  },
+  "icons": {
+    "color": "icon-color.png",
+    "outline": "icon-outline.png"
+  },
+  "name": {
+    "short": "Test Teams Auth SSO",
+    "full": "Multi-account test"
+  },
+  "description": {
+    "short": "Test Teams Auth SSO in csharp",
+    "full": ""
+  },
+  "accentColor": "#FFFFFF",  
+  "staticTabs": [
+    {
+      "entityId": "auth",
+      "name": "SSO Tab",
+      "contentUrl": "https://«ngrok_forwarding_subdomain».ngrok.io/Home/Index",
+      "websiteUrl": "https://«ngrok_forwarding_subdomain».ngrok.io/Index",
+      "scopes": [ "personal" ]
+    }
+  ],
+  
+  "permissions": [
+    "identity",
+    "messageTeamMembers"
+  ],
+  "validDomains": [
+    "*.githubusercontent.com",
+    "*.ngrok.io",
+    "*.botframework.com"
+  ]
+}

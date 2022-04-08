@@ -1,0 +1,301 @@
+﻿<div id="divLogin" style="display: none;">
+    <span id="spnLoginPrompt" style="margin-bottom:10px;"></span>
+    <button id="btnLogin" onclick="login()" class="btn btn-secondary" style="margin-top:15px;">Sign In</button>
+
+</div>
+
+<form method="post" action="../Home/Index" id="frmPostToken">
+    <div class="aspNetHidden">
+        <input type="hidden" name="__VIEWSTATE" id="__VIEWSTATE" value="yMkcq1MZsdX+9bt1ULupSgPscWTb1iMsnC4DQRAEBVdR7kRHfETLskv15JiplqzXQ7Yy9wXyT0a+siu+Z3k0XN+5UVXPvJKcj4e48yiR+pac1o2jLSMu01veEMVqUTiE+FkdIuMw5+TA1UD8ffQfNvAC0/ej1/9aBV9gavSjnpWFZyB7fkRbAuSralTM2LTPvCv9C58iHuElibzV" />
+    </div>
+
+    <div class="aspNetHidden">
+
+        <input type="hidden" name="__VIEWSTATEGENERATOR" id="__VIEWSTATEGENERATOR" value="BDB7D52D" />
+        <input type="hidden" name="__EVENTVALIDATION" id="__EVENTVALIDATION" value="sX04U9NXSNX5Pnu/6XQFTTpHNBiCoUD9Oxhd156yuJr//mfNbkaThg+tMcw3FwfF3InzgYfb+MZPUHCcqHRFuxvfiGo=" />
+    </div>
+    <input type="hidden" name="hdnIdToken" id="hdnIdToken" />
+</form>
+
+<!-- Logout button -->
+<br />
+<button id="btnLogout" onclick="logout()" style="display: none">Logout (Silent)</button>
+
+<script src="../Scripts/jquery-3.5.1.min.js"></script>
+<script src="../Scripts/msteams-sdk-1.6.0.js"></script>
+
+<!-- Check before upgrading your ADAL version, as this sample depends on an internal function to authenticate silently -->
+<script src="../Scripts/ms-adal-1.0.17.js"></script>
+
+<script type="text/javascript">
+        microsoftTeams.initialize();
+
+        let hdnIdToken = "hdnIdToken";
+        let frmPostToken = "frmPostToken";
+        let PostError = false;
+
+        // Parse query parameters
+        let queryParams = getQueryParameters();
+        let loginHint = queryParams["loginHint"];
+        let userObjectId = queryParams["userObjectId"];
+
+        // Use the tenant id of the current organization. For guest users, we want an access token for
+        // the tenant we are currently in, not the home tenant of the guest.
+        //let tenantId = queryParams["tenantId"] || "common";
+        let tenantId = "common";
+
+
+        // ADAL.js configuration
+        let config = {
+            tenant: tenantId,
+            clientId: "@ViewBag.ClientId",
+            redirectUri: window.location.origin + "/auth/msteamsSilentEnd",     // This should be in the list of redirect uris for the AAD app
+            cacheLocation: "localStorage",
+            navigateToLoginRequestUrl: false,
+
+            // Setup extra query parameters for ADAL
+            // - openid and profile scope adds profile information to the id_token
+            // - login_hint provides the expected user name
+            extraQueryParameter: "scope=openid+profile&login_hint=" + encodeURIComponent(loginHint),
+        };
+
+        // Setup extra query parameters for ADAL
+        // - openid and profile scope adds profile information to the id_token
+        // - login_hint provides the expected user name
+        //alert(loginHint);
+        if (loginHint) {
+            config.extraQueryParameter = "scope=openid+profile&login_hint=" + encodeURIComponent(loginHint);
+        } else {
+            config.extraQueryParameter = "scope=openid+profile";
+        }
+
+        let authContext = new AuthenticationContext(config);
+
+        // See if there's a cached user and it matches the expected user
+        let user = authContext.getCachedUser();
+        if (user && (user.profile.oid !== userObjectId)) {
+            // User doesn't match, clear the cache
+            authContext.clearCache();
+        }
+
+        if (!PostError) {
+            // Get the id token (which is the token for resource = clientId)
+            authContext.acquireToken(config.clientId, function (errDesc, token, err, tokenType) {
+
+                if (token) {
+                    // When there's no cached user, ADAL.js 1.0.17 returns an access token in the callback even when asked for the id token.
+                    // To work around this bug, check the token type; if it's not an id token, get the id token from cache.
+                    if (tokenType !== authContext.CONSTANTS.ID_TOKEN) {
+                        console.log("ADAL.js bug: requested id_token, got " + tokenType);
+                        token = authContext.getCachedToken(config.clientId);
+                    }
+
+                    postTokenForSiteAuth(token);
+                } else {
+                    console.log("Failed to get id token silently: " + errDesc);
+                    debugger;
+                    // Failed to get the id token silently; show the login button
+                    $("#divLogin").show();
+
+                    // You could attempt to launch the login popup here, but in browsers this could be blocked by
+                    // a popup blocker, in which case the login attempt will fail with the reason FailedToOpenWindow.
+                }
+            });
+        }
+        // To get an access token to a resource like Graph,
+        // 1. Provide the resource id to acquireToken()
+        //        authContext.acquireToken("https://graph.microsoft.com", function (errDesc, token, err, tokenType) { ... })
+        // 2. Remove the check for tokenType from the callback, because access token is the correct type.
+        // 3. In the success callback below, call acquireToken again.
+
+        // Interactive login to Azure AD
+        function login() {
+            $(".auth-data").hide();
+
+            microsoftTeams.authentication.authenticate({
+                url: window.location.origin + "/auth/msteamsSilentStart",
+                width: 600,
+                height: 535,
+                successCallback: function (result) {
+                    // AuthenticationContext is a singleton
+
+                    let authContext = new AuthenticationContext();
+                    let idToken = authContext.getCachedToken(config.clientId);
+                    if (idToken) {
+                        //showUserInformation(idToken);
+                        postTokenForSiteAuth(idToken);
+                    } else {
+                        console.error("Error getting cached id token. This should never happen.");
+                        // At this point we have to get the user involved, so show the login button
+                        $("#divLogin").show();
+                    };
+                },
+                failureCallback: function (reason) {
+                    console.log("Login failed: " + reason);
+                    if (reason === "CancelledByUser" || reason === "FailedToOpenWindow") {
+                        console.log("Login was blocked by popup blocker or canceled by user.");
+                    }
+                    // At this point we have to get the user involved, so show the login button
+                    $("#divLogin").show();
+
+                    $(".auth-data").hide();
+                    $("#divLoginError").text(reason).show();
+                }
+            });
+        }
+
+        function postTokenForSiteAuth(idToken) {
+			$("#" + hdnIdToken).val(btoa(idToken));
+            $("#" + frmPostToken).submit();
+        }
+
+    //       // Show information about the logged-in user
+    //       function showUserInformation(idToken) {
+    //           debugger;
+    //           $("#divRawIdToken").text(idToken).show();
+
+    //           // This demonstrates what an application can do with the id_token
+
+    //           // A) The app can use it as proof of the user's identity.
+    //           // The /api/decodeToken endpoint takes an id_token in the Authorization header and validates it
+    //           // as per (https://docs.microsoft.com/en-us/azure/active-directory/develop/active-directory-token-and-claims#idtokens).
+    //           // If successful, it returns the decoded token. Otherwise it returns an HTTP 401 Unauthorized response.
+    //           $.ajax({
+    //               type: "POST",
+    //               data: "{}",
+				//url: window.location.origin + "/api/v1/auth/jwt/decode",
+    //               beforeSend: function(request) {
+    //                   request.setRequestHeader("Authorization", "Bearer " + btoa(idToken));
+    //               },
+    //               success: function (token) {
+    //                   debugger;
+    //                   let claimsDiv = $("#divIdTokenClaims");
+    //                   claimsDiv.empty();
+
+    //                   for (let claimId in token) {
+    //                       $("<div>")
+    //                           .append($("<b>").text(claimId + ": "))
+    //                           .append($("<span>").text(token[claimId].m_type + " : "))
+				//			.append($("<span>").text(token[claimId].m_value))
+    //                           .appendTo(claimsDiv);
+    //                   }
+
+    //                   // The id token for a guest (external) user will not have a "upn" claim.
+    //                   // Instead it has a "unique_name" claim, which is the username in the home organization/identity provider.
+
+    //                   $("#divIdTokenClaims").show();
+    //                   $("#divIdTokenError").hide();
+    //               },
+    //               error: function (xhr, textStatus, errorThrown) {
+    //                   debugger;
+    //                   console.log("textStatus: " + textStatus + ", errorThrown:" + errorThrown);
+    //                   $("#divIdTokenError").text(errorThrown).show();
+    //                   $("#divIdTokenClaims").hide();
+    //               },
+    //           });
+
+            // B) Through the Azure AD On-Behalf-Of flow, the app can exchange it for an access token for
+            // other APIs that the user has consented to. In this example, the app gets a Graph token and
+            // returns the user's full Azure AD profile.
+            //$.ajax({
+            //    url: window.location.origin + "/api/getProfileFromGraph",
+            //    beforeSend: function(request) {
+            //        request.setRequestHeader("Authorization", "Bearer " + idToken);
+            //    },
+            //    success: function (profile) {
+            //        let profileDiv = $("#divGraphProfile");
+            //        profileDiv.empty();
+
+            //        for (let key in profile) {
+            //            if ((key[0] !== "") && profile[key]) {
+            //                $("<div>")
+            //                    .append($("<b>").text(key + ": "))
+            //                    .append($("<span>").text(profile[key]))
+            //                    .appendTo(profileDiv);
+            //            }
+            //        }
+
+            //        $("#divGraphProfile").show();
+            //        $("#divGraphProfileError").hide();
+            //    },
+            //    error: function (xhr, textStatus, errorThrown) {
+            //        console.log("textStatus: " + textStatus + ", errorThrown:" + errorThrown);
+            //        $("#divGraphProfileError").text(errorThrown).show();
+            //        $("#divGraphProfile").hide();
+            //    },
+            //});
+
+            // C) The id_token serves as verifiable evidence of the user's identity, in particular, it has
+            // a claim of the user's Azure AD object id ("oid"). With the OID as a key, the app can share
+            // data betwen it's various capabilities (tab, bot, messaging extension). Here, the tab uses the
+            // /api/getProfilesFromBot endpoint to show  profiles from the various services that the user has
+            // signed in to via the bot.
+            //$.ajax({
+            //    url: window.location.origin + "/api/getProfilesFromBot",
+            //    beforeSend: function(request) {
+            //        request.setRequestHeader("Authorization", "Bearer " + idToken);
+            //    },
+            //    success: function (profiles) {
+            //        let profilesDiv = $("#divBotProfiles");
+            //        profilesDiv.empty();
+
+            //        let profileNames = Object.keys(profiles).sort();
+            //        if (profileNames.length === 0) {
+            //            profilesDiv.text("No linked accounts");
+            //        } else {
+            //            profileNames.forEach(profileName => {
+            //                profilesDiv.append($("<h3>").text(profileName));
+
+            //                let profile = profiles[profileName];
+            //                for (let key in profile) {
+            //                    let value = profile[key];
+            //                    if ((key[0] !== "") && value) {
+            //                        $("<div>")
+            //                            .append($("<b>").text(key + ": "))
+            //                            .append($("<span>").text((value instanceof Object) ?  JSON.stringify(value) : value))
+            //                            .appendTo(profilesDiv);
+            //                    }
+            //                }
+            //            });
+            //        }
+
+            //        $("#divBotProfiles").show();
+            //        $("#divBotProfilesError").hide();
+
+            //        // Show the logout button and hide the login button
+            //        $("#btnLogin").hide();
+            //        $("#btnLogout").show();
+            //    },
+            //    error: function (xhr, textStatus, errorThrown) {
+            //        console.log("textStatus: " + textStatus + ", errorThrown:" + errorThrown);
+            //        $("#divBotProfilesError").text(errorThrown).show();
+            //        $("#divBotProfiles").hide();
+            //    },
+            //});
+        //}
+
+        // Parse query parameters into key-value pairs
+        function getQueryParameters() {
+            let queryParams = {};
+            location.search.substr(1).split("&").forEach(function(item) {
+                let s = item.split("="),
+                k = s[0],
+                v = s[1] && decodeURIComponent(s[1]);
+                queryParams[k] = v;
+            });
+            return queryParams;
+        }
+
+        // Demonstrates silent logout - simply clears the loginHint, replaces the value of userObjectId with a dummy value, and reloads the page
+        function logout() {
+            let url = location.href.split("?")[0] + "?";
+            let queryParams = getQueryParameters();
+            delete queryParams["loginHint"];
+            queryParams["userObjectId"] = "00000000-0000-0000-000000000000";
+            for (var k in queryParams) {
+                url = url + k + "=" + encodeURIComponent(queryParams[k]) + "&";
+                console.log(k);
+            }
+            location.href = url;
+        }
+</script>
